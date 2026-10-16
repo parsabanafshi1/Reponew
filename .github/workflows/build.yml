@@ -3,6 +3,8 @@ name: Build Mod
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -16,49 +18,42 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Unzip build.zip
-        run: |
-          unzip build.zip -d project
-          ls -la project
-
-      - name: Fix getFuse() issue
-        run: |
-          sed -i 's/closest\.getFuse()/closest.fuse/g' project/src/main/java/com/purpleclient/hud/HUDOverlay.java
-
       - name: Set up JDK 8
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '8'
 
-      - name: Setup Gradle 4.10.3
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 4.10.3
+      - name: Grant execute permission for gradlew
+        working-directory: PurpleClient
+        run: chmod +x gradlew
 
       - name: Build with Gradle
-        working-directory: project
-        run: gradle build --stacktrace
+        working-directory: PurpleClient
+        run: ./gradlew build --stacktrace
 
-      - name: Delete sources jar
-        working-directory: project
-        run: rm -f build/libs/*-sources.jar
-
-      - name: List remaining jars
-        working-directory: project
+      - name: List built jars
+        working-directory: PurpleClient
         run: ls -la build/libs/
+
+      - name: Find built jar
+        id: find_jar
+        working-directory: PurpleClient
+        run: |
+          JAR=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-dev.jar" | head -n 1)
+          echo "jar_path=$JAR" >> $GITHUB_OUTPUT
+          echo "Selected JAR: $JAR"
 
       - name: Upload Mod Jar
         uses: actions/upload-artifact@v4
         with:
-          name: PurpleClient-Mod
-          path: project/build/libs/PurpleClient-1.0.0.jar
+          name: PurpleClient-Jar
+          path: PurpleClient/${{ steps.find_jar.outputs.jar_path }}
           if-no-files-found: error
 
       - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: "Build #${{ github.run_number }}"
-          files: project/build/libs/PurpleClient-1.0.0.jar
+          files: PurpleClient/${{ steps.find_jar.outputs.jar_path }}
           token: ${{ secrets.GITHUB_TOKEN }}
